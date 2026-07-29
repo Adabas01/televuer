@@ -254,11 +254,17 @@ class TeleVuer:
                     getattr(self, f"{prefix}_ctrl_thumbstick_shared").value = bool(controllerState.get("thumbstick", False))
                 with getattr(self, f"{prefix}_ctrl_thumbstickValue_shared").get_lock():
                     getattr(self, f"{prefix}_ctrl_thumbstickValue_shared")[:] = controllerState.get("thumbstickValue", [0.0, 0.0])
-                # buttons
+                # buttons. Left-hand controllers may report X/Y instead of A/B.
+                if prefix == "left":
+                    a_button_names = ("aButton", "xButton")
+                    b_button_names = ("bButton", "yButton")
+                else:
+                    a_button_names = ("aButton",)
+                    b_button_names = ("bButton",)
                 with getattr(self, f"{prefix}_ctrl_aButton_shared").get_lock():
-                    getattr(self, f"{prefix}_ctrl_aButton_shared").value = bool(controllerState.get("aButton", False))
+                    getattr(self, f"{prefix}_ctrl_aButton_shared").value = any(bool(controllerState.get(name, False)) for name in a_button_names)
                 with getattr(self, f"{prefix}_ctrl_bButton_shared").get_lock():
-                    getattr(self, f"{prefix}_ctrl_bButton_shared").value = bool(controllerState.get("bButton", False))
+                    getattr(self, f"{prefix}_ctrl_bButton_shared").value = any(bool(controllerState.get(name, False)) for name in b_button_names)
 
             extract_controllers(left_controller, "left")
             extract_controllers(right_controller, "right")
