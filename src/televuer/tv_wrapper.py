@@ -229,7 +229,9 @@ class TeleVuerWrapper:
     def __init__(self, use_hand_tracking: bool, binocular: bool=True, img_shape: tuple=(480, 1280), display_fps: float=30.0,
                        display_mode: Literal["immersive", "pass-through", "ego"]="immersive", zmq: bool=False, webrtc: bool=False, webrtc_url: str=None, 
                        cert_file: str=None, key_file: str=None, return_hand_rot_data: bool=False,
-                       arm_reference_mode: Literal["head_position", "head_yaw"]="head_yaw"):
+                       arm_reference_mode: Literal["head_position", "head_yaw"]="head_yaw",
+                       left_wrist_webrtc_url: str=None, right_wrist_webrtc_url: str=None,
+                       left_wrist_aspect: float=4.0 / 3.0, right_wrist_aspect: float=4.0 / 3.0):
         """
         TeleVuerWrapper is a wrapper for the TeleVuer class, which handles XR device's data suit for robot control.
         It initializes the TeleVuer instance with the specified parameters and provides a method to get motion state data.
@@ -248,16 +250,20 @@ class TeleVuerWrapper:
         :param arm_reference_mode: str, controls how wrist poses are expressed for IK.
             * "head_position": transfer from WORLD to HEAD with translation adjustment only.
             * "head_yaw": default mode; transfer from WORLD to HEAD with R_Brobot_world_head_yaw^T, ignoring pitch/roll.
+        :param left_wrist_webrtc_url: optional WebRTC URL for a left wrist-camera XR panel.
+        :param right_wrist_webrtc_url: optional WebRTC URL for a right wrist-camera XR panel.
+        :param left_wrist_aspect: width/height aspect ratio of the left wrist-camera panel.
+        :param right_wrist_aspect: width/height aspect ratio of the right wrist-camera panel.
 
         Note:
 
         - display_mode controls what the VR headset displays:
             * "immersive": fully immersive mode; VR shows the robot's first-person view (zmq or webrtc must be enabled).
-            * "pass-through": VR shows the real world through the VR headset cameras; no image from zmq or webrtc is displayed (even if enabled).
+            * "pass-through": VR shows the real world through the VR headset cameras; no head-camera image is displayed. Optional wrist-camera panels can still be shown.
             * "ego": a small window in the center shows the robot's first-person view, while the surrounding area shows the real world.
         
-        - Only one image mode is active at a time.
-        - Image transmission to VR occurs only if display_mode is "immersive" or "ego" and the corresponding zmq or webrtc option is enabled.
+        - Only one head-camera image mode is active at a time.
+        - Head-camera image transmission to VR occurs only if display_mode is "immersive" or "ego" and the corresponding zmq or webrtc option is enabled.
         - If zmq and webrtc simultaneously enabled, webrtc will be prioritized.
 
         --------------              -------------------           --------------       -----------------                     -------
@@ -265,7 +271,7 @@ class TeleVuerWrapper:
         --------------              -------------------           --------------       -----------------                     ------- 
            immersive        |   fully immersive view (robot)  |     Yes (full)     |     zmq or webrtc        |   if both enabled, webrtc prioritized
         --------------              -------------------           --------------       -----------------                     -------
-         pass-through       |       Real world view (VR)      |         No         |          N/A             |  even if image source enabled, don't display
+         pass-through       |       Real world view (VR)      | wrist panels only  |   optional wrist WebRTC   |  head-camera image is not displayed
         --------------              -------------------           --------------       -----------------                     -------
               ego           |      ego view (robot + VR)      |    Yes (small)     |     zmq or webrtc        |   if both enabled, webrtc prioritized
         --------------              -------------------           --------------       -----------------                     -------
@@ -279,7 +285,11 @@ class TeleVuerWrapper:
         self.arm_reference_mode = arm_reference_mode
         self.tvuer = TeleVuer(use_hand_tracking=use_hand_tracking, binocular=binocular, img_shape=img_shape, display_fps=display_fps,
                               display_mode=display_mode, zmq=zmq, webrtc=webrtc, webrtc_url=webrtc_url, 
-                              cert_file=cert_file, key_file=key_file)
+                              cert_file=cert_file, key_file=key_file,
+                              left_wrist_webrtc_url=left_wrist_webrtc_url,
+                              right_wrist_webrtc_url=right_wrist_webrtc_url,
+                              left_wrist_aspect=left_wrist_aspect,
+                              right_wrist_aspect=right_wrist_aspect)
         
     def get_tele_data(self):
         """

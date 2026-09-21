@@ -13,7 +13,9 @@ from typing import Literal
 class TeleVuer:
     def __init__(self, use_hand_tracking: bool, binocular: bool=True, img_shape: tuple=None, display_fps: float=30.0,
                        display_mode: Literal["immersive", "pass-through", "ego"]="immersive", zmq: bool=False, webrtc: bool=False, webrtc_url: str=None, 
-                       cert_file: str=None, key_file: str=None):
+                       cert_file: str=None, key_file: str=None,
+                       left_wrist_webrtc_url: str=None, right_wrist_webrtc_url: str=None,
+                       left_wrist_aspect: float=4.0 / 3.0, right_wrist_aspect: float=4.0 / 3.0):
         """
         TeleVuer class for OpenXR-based XR teleoperate applications.
         This class handles the communication with the Vuer server and manages image and pose data.
@@ -29,16 +31,20 @@ class TeleVuer:
         :param webrtc_url: str, URL for the webrtc offer. must be provided if webrtc is True.
         :param cert_file: str, path to the SSL certificate file.
         :param key_file: str, path to the SSL key file.
+        :param left_wrist_webrtc_url: optional WebRTC URL for a left wrist-camera XR panel.
+        :param right_wrist_webrtc_url: optional WebRTC URL for a right wrist-camera XR panel.
+        :param left_wrist_aspect: width/height aspect ratio of the left wrist-camera panel.
+        :param right_wrist_aspect: width/height aspect ratio of the right wrist-camera panel.
 
         Note:
 
         - display_mode controls what the VR headset displays:
             * "immersive": fully immersive mode; VR shows the robot's first-person view (zmq or webrtc must be enabled).
-            * "pass-through": VR shows the real world through the VR headset cameras; no image from zmq or webrtc is displayed (even if enabled).
+            * "pass-through": VR shows the real world through the VR headset cameras; no head-camera image is displayed. Optional wrist-camera panels can still be shown.
             * "ego": a small window in the center shows the robot's first-person view, while the surrounding area shows the real world.
         
-        - Only one image mode is active at a time.
-        - Image transmission to VR occurs only if display_mode is "immersive" or "ego" and the corresponding zmq or webrtc option is enabled.
+        - Only one head-camera image mode is active at a time.
+        - Head-camera image transmission to VR occurs only if display_mode is "immersive" or "ego" and the corresponding zmq or webrtc option is enabled.
         - If zmq and webrtc simultaneously enabled, webrtc will be prioritized.
 
         --------------              -------------------           --------------       -----------------                     -------
@@ -46,7 +52,7 @@ class TeleVuer:
         --------------              -------------------           --------------       -----------------                     ------- 
            immersive        |   fully immersive view (robot)  |     Yes (full)     |     zmq or webrtc        |   if both enabled, webrtc prioritized
         --------------              -------------------           --------------       -----------------                     -------
-         pass-through       |       Real world view (VR)      |         No         |          N/A             |  even if image source enabled, don't display
+         pass-through       |       Real world view (VR)      | wrist panels only  |   optional wrist WebRTC   |  head-camera image is not displayed
         --------------              -------------------           --------------       -----------------                     -------
               ego           |      ego view (robot + VR)      |    Yes (small)     |     zmq or webrtc        |   if both enabled, webrtc prioritized
         --------------              -------------------           --------------       -----------------                     -------
@@ -99,6 +105,14 @@ class TeleVuer:
         self.zmq = zmq
         self.webrtc = webrtc
         self.webrtc_url = webrtc_url
+        self.left_wrist_webrtc_url = left_wrist_webrtc_url
+        self.right_wrist_webrtc_url = right_wrist_webrtc_url
+        self.left_wrist_aspect = left_wrist_aspect
+        self.right_wrist_aspect = right_wrist_aspect
+        if self.left_wrist_webrtc_url and self.left_wrist_aspect <= 0:
+            raise ValueError("[TeleVuer] left_wrist_aspect must be positive.")
+        if self.right_wrist_webrtc_url and self.right_wrist_aspect <= 0:
+            raise ValueError("[TeleVuer] right_wrist_aspect must be positive.")
 
         if self.display_mode == "immersive":
             if self.webrtc:
@@ -205,6 +219,41 @@ class TeleVuer:
             return
         self.latest_frame = image
         self.new_frame_event.set()
+
+    def _wrist_camera_planes(self):
+        """Build optional camera-relative wrist video panels for the XR scene."""
+        plane_specs = (
+            (
+                "left-wrist-video",
+                self.left_wrist_webrtc_url,
+                self.left_wrist_aspect,
+                [-0.3, -0.0, 0.0],
+            ),
+            (
+                "right-wrist-video",
+                self.right_wrist_webrtc_url,
+                self.right_wrist_aspect,
+                [0.3, -0.0, 0.0],
+            ),
+        )
+        return [
+            WebRTCVideoPlane(
+                src=url,
+                iceServer=None,
+                key=key,
+                aspect=aspect,
+                height=0.15,
+                distanceToCamera=0.8,
+                position=position,
+            )
+            for key, url, aspect, position in plane_specs
+            if url
+        ]
+
+    def _upsert_wrist_camera_planes(self, session):
+        wrist_camera_planes = self._wrist_camera_planes()
+        if wrist_camera_planes:
+            session.upsert(wrist_camera_planes, to="bgChildren")
 
     def close(self):
         self.process.terminate()
@@ -344,6 +393,7 @@ class TeleVuer:
                 ),
                 to="bgChildren",
             )
+        self._upsert_wrist_camera_planes(session)
         while True:
             session.upsert(
                 [
@@ -400,6 +450,7 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._upsert_wrist_camera_planes(session)
         while True:
             session.upsert(
                 [
@@ -440,6 +491,7 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._upsert_wrist_camera_planes(session)
         while True:
             session.upsert(
                 WebRTCStereoVideoPlane(
@@ -477,6 +529,7 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._upsert_wrist_camera_planes(session)
         while True:
             session.upsert(
                 WebRTCVideoPlane(
@@ -513,6 +566,7 @@ class TeleVuer:
                 ),
                 to="bgChildren",
             )
+        self._upsert_wrist_camera_planes(session)
         while True:
             session.upsert(
                 [
@@ -569,6 +623,7 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._upsert_wrist_camera_planes(session)
         while True:
             session.upsert(
                 [
@@ -609,6 +664,7 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._upsert_wrist_camera_planes(session)
         while True:
             session.upsert(
                 WebRTCStereoVideoPlane(
@@ -646,6 +702,7 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._upsert_wrist_camera_planes(session)
         while True:
             session.upsert(
                 WebRTCVideoPlane(
@@ -683,6 +740,7 @@ class TeleVuer:
                 to="bgChildren",
             )
 
+        self._upsert_wrist_camera_planes(session)
         while True:
             await asyncio.sleep(1.0 / self.display_fps)
 
